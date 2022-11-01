@@ -87,11 +87,12 @@ def test(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pretrained_model_name_or_path", type=str)
+    parser.add_argument("--pretrained_model_name_or_path", type=str, default='donut-base-finetuned-docvqa')
     parser.add_argument("--dataset_name_or_path", type=str)
-    parser.add_argument("--split", type=str, default="test")
+    # parser.add_argument("--split", type=str, default="test")
     parser.add_argument("--task_name", type=str, default=None)
     parser.add_argument("--save_path", type=str, default=None)
+    
     args, left_argv = parser.parse_known_args()
 
     if args.task_name is None:
