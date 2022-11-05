@@ -5,6 +5,7 @@ MIT License
 """
 import json
 import os
+import numpy as np
 import random
 import PIL
 from collections import defaultdict
@@ -26,13 +27,20 @@ def save_json(write_path: Union[str, bytes, os.PathLike], save_obj: Any):
         json.dump(save_obj, f)
 
 #Update for local jsonl
-def load_json(json_path: Union[str, bytes, os.PathLike]):
+def load_json(json_path: Union[str, bytes, os.PathLike], split: str):
+    # np.random.seed(seed=seed)
     dataset = []
     with open(json_path, 'r') as f:
         for line in f:
             json_sample = json.loads(line)
             dataset.append(json_sample)
-    return dataset
+    random.shuffle(dataset)
+    train_dataset, valid_dataset = dataset[:int(len(dataset)*0.8)], dataset[int(len(dataset)*0.8):] #拡張可能にする
+    if split == 'train':
+        return train_dataset
+    elif split == 'validation':
+        return valid_dataset
+    # return train_dataset, valid_dataset
     
 #load
 def load_image(image_path: str, mime_type: str):
@@ -60,7 +68,7 @@ class DonutDataset(Dataset):
         task_start_token: str = "<s>",
         prompt_end_token: str = None,
         sort_json_key: bool = True,
-        gpu = True
+        gpu = True,
     ):
         super().__init__()
 
@@ -73,7 +81,7 @@ class DonutDataset(Dataset):
         self.sort_json_key = sort_json_key
         self.gpu = gpu
         # self.dataset = load_dataset(dataset_name_or_path, split=self.split) #For HaggingFace Hub dataset
-        self.dataset = load_json(dataset_name_or_path) #For local dtaset
+        self.dataset = load_json(dataset_name_or_path, self.split) #For local dtaset
         self.dataset_length = len(self.dataset)
         self.gt_token_sequences = []
         for sample in self.dataset:

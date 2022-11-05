@@ -1,6 +1,6 @@
 """
 Usage:
-    sol -vvv run  -d --root . --cmd 'python3.8 sol.py --vqgan' --num-gpu 1
+    sol -vvv run  -d --root . --cmd 'python3.8 sol.py --train' --num-gpu 1
 """
 
 import os
@@ -13,18 +13,12 @@ from functools import partial
 
 
 def args_parser():
-    parser = argparse.ArgumentParser(description="vqgan")
+    parser = argparse.ArgumentParser(description="donut")
     parser.add_argument('--train', action='store_true', default=False)
-    parser.add_argument('--exp', type=str, default='1')
-    parser.add_argument('--path-images-s3', type=str, default="s3://ai-lab-production/chen/donut/dataset/20221010-test/images")
-    parser.add_argument('--path-jsonl-s3', type=str, default="s3://ai-lab-production/chen/donut/dataset/20221010-test/metadata.jsonl")
-    
-    parser.add_argument('--path-jsonl-local', type=str, default='.')
-    parser.add_argument('--dataset', type=str, default='./dataset/')
-    parser.add_argument('--result', type=str, default='./result/')
-    parser.add_argument('--checkpoints', type=str, default='./checkpoints/')
-    parser.add_argument('--max-load', type=int, default=5000) #train num
-    parser.add_argument('--path-result-s3', type=str, default='s3://ai-lab-production/chen/donut/result/20221010-test/')
+    parser.add_argument('--exp', type=str, default='test')
+    parser.add_argument('--checkpoints', type=str, default='20221010-test')
+    parser.add_argument('--dataset-id', type=str, default='20221010-test')
+    parser.add_argument('--path-s3', type=str, default="s3://ai-lab-production/chen/donut")
     args = parser.parse_args()
     return args
 
@@ -48,36 +42,39 @@ def upload_file_to_s3s(checkpoint_path_local, checkpoint_path_s3):
 
 
 def main(args):
+    path_s3_images = os.path.join(args.path_s3,  'dataset', args.dataset_id,'images')
+    path_s3_jsonl = os.path.join(args.path_s3, 'dataset', args.dataset_id, 'metadata.jsonl')
+    path_s3_checkpoints = os.path.join(args.path_s3, 'result', args.checkpoints)
+    path_s3_result = os.path.join(args.path_s3, 'result', args.exp)
+    
     #setup
-    ckpt_path = './checkpoints/'
-    os.makedirs(args.dataset, exist_ok=True)
-    os.makedirs(ckpt_path, exist_ok=True)
+    os.makedirs('./dataset', exist_ok=True)
+    os.makedirs('./checkpoints', exist_ok=True)
+    os.makedirs('./result', exist_ok=True)
+    Path(path_s3_checkpoints).mkdir(parents=True, exist_ok=True)
+    Path(path_s3_result).mkdir(parents=True, exist_ok=True)
+    
+    #Download checkpoint
+    download_dir_from_s3(path_s3_checkpoints, './checkpoints')
+    
+    #imagesをローカルに保存
+    download_dir_from_s3(path_s3_images, './dataset')
+
+    #metadata.jsonlをローカルに保存
+    download_dir_from_s3(path_s3_jsonl, '')
+    
+    
+    #Training
     os.system('pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113')
     os.system('pip3 install pytorch-lightning')
     os.system('pip3 install sconf')
-
-
-    #Download checkpoint
-    # if wr.s3.does_object_exist(args.path_result_s3): 
-    download_dir_from_s3(args.path_result_s3, args.checkpoints)
-    
-    # if wr.s3.does_object_exist(ckpt_path_vqgan_s3):
-    #     download_file_from_s3(ckpt_path_vqgan_s3, ckpt_path_vqgan)
-    # else:
-    #     print(f'doesnt exist {ckpt_path_vqgan_s3}')
-    
-    #imagesをローカルに保存
-    download_dir_from_s3(args.path_images_s3, args.dataset)
-
-    #metadata.jsonlをローカルに保存
-    download_dir_from_s3(args.path_jsonl_s3, args.path_jsonl_local)
-    
-    #training_vqganの実行
     if args.train:
-        subprocess.run(['python', 'train.py', '--config', './config/train_cord_custom.yaml', '--exp_version', 'test'])
-    for filepath in Path('./result/train_cord_custom/test').iterdir():
+        subprocess.run(['python', 'train.py', '--config', './config/train_cord_custom.yaml', '--exp_version', 'main'])
+        
+    #Save checkpoint
+    for filepath in Path(f'./result/train_cord_custom/main').iterdir():
         print(filepath)
-        filepath.copy(os.path.join(args.path_result_s3, filepath.name))
+        filepath.copy(os.path.join(path_s3_result, filepath.name))
 
 if __name__ == '__main__':
     args = args_parser()
