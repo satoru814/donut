@@ -6,9 +6,11 @@ MIT License
 import json
 import os
 import random
+import PIL
 from collections import defaultdict
 from typing import Any, Dict, List, Tuple, Union
-
+from PIL import Image,ImageMath
+from pdf2image import convert_from_path, convert_from_bytes
 import torch
 import zss
 from datasets import load_dataset
@@ -16,17 +18,25 @@ from nltk import edit_distance
 from torch.utils.data import Dataset
 from transformers.modeling_utils import PreTrainedModel
 from zss import Node
+from pathlibfs import Path
 
 
 def save_json(write_path: Union[str, bytes, os.PathLike], save_obj: Any):
     with open(write_path, "w") as f:
         json.dump(save_obj, f)
 
-
+#Update for local jsonl
 def load_json(json_path: Union[str, bytes, os.PathLike]):
-    with open(json_path, "r") as f:
-        return json.load(f)
-
+    dataset = []
+    with open(json_path, 'r') as f:
+        for line in f:
+            json_sample = json.loads(line)
+            dataset.append(json_sample)
+    return dataset
+    
+#load
+def load_image(image_path: str, mime_type: str):
+    return Image.open(image_path)
 
 class DonutDataset(Dataset):
     """
@@ -50,6 +60,7 @@ class DonutDataset(Dataset):
         task_start_token: str = "<s>",
         prompt_end_token: str = None,
         sort_json_key: bool = True,
+        gpu = True
     ):
         super().__init__()
 
@@ -60,10 +71,10 @@ class DonutDataset(Dataset):
         self.task_start_token = task_start_token
         self.prompt_end_token = prompt_end_token if prompt_end_token else task_start_token
         self.sort_json_key = sort_json_key
-
-        self.dataset = load_dataset(dataset_name_or_path, split=self.split)
+        self.gpu = gpu
+        # self.dataset = load_dataset(dataset_name_or_path, split=self.split) #For HaggingFace Hub dataset
+        self.dataset = load_json(dataset_name_or_path) #For local dtaset
         self.dataset_length = len(self.dataset)
-
         self.gt_token_sequences = []
         for sample in self.dataset:
             ground_truth = json.loads(sample["ground_truth"])
@@ -91,7 +102,10 @@ class DonutDataset(Dataset):
         self.prompt_end_token_id = self.donut_model.decoder.tokenizer.convert_tokens_to_ids(self.prompt_end_token)
 
     def __len__(self) -> int:
-        return self.dataset_length
+        if self.gpu:
+            return self.dataset_length
+        else:
+            return 10
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -104,9 +118,19 @@ class DonutDataset(Dataset):
             labels : masked labels (model doesn't need to predict prompt and pad token)
         """
         sample = self.dataset[idx]
-
+        meta = json.loads(sample["ground_truth"])['meta']
+        #custom: read PIL image from path string
+        if self.gpu:
+            image = load_image(sample['file_name'], meta['mime_type']) 
+        else :
+            image = load_image(os.path.join('./dataset/images/', Path(sample['file_name']).name), meta['mime_type']) #load from test data from ./datset/images
+            
+        #custom corrupted data
+        if image == None:
+            return None
+        
         # input_tensor
-        input_tensor = self.donut_model.encoder.prepare_input(sample["image"], random_padding=self.split == "train")
+        input_tensor = self.donut_model.encoder.prepare_input(image, random_padding=self.split == "train")
 
         # input_ids
         processed_parse = random.choice(self.gt_token_sequences[idx])  # can be more than one, e.g., DocVQA Task 1

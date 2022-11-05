@@ -1,0 +1,26 @@
+solvarg:
+  project:
+    name: Donut
+    root: "$YAMLDIR"
+    ignore_patterns:
+      - ^.*notebook.ipynb$
+      - ^.*/synthdog$
+      - ^.*/dataset$
+      - ^.*/venv$
+      - ^.*/misc$
+      - ^.*/.git$
+      - ^.*/result$
+      - ^.*/checkpoints$
+      
+  job:
+    backoff_limit : 1
+    +resource_presets:
+      gpu:
+        num_gpu: 4
+        request_cpu: "3"
+        request_memory: 10Gi
+        +tolerations:
+          - { key: nvidia.com/gpu, operator: Exists }
+        affinity_required:
+          - match_expressions:
+            - { key: ng-name, operator: In, values: [g4dn-12x-ondemand] }

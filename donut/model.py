@@ -96,6 +96,7 @@ class SwinEncoder(nn.Module):
         Args:
             x: (batch_size, num_channels, height, width)
         """
+        x = x.to(torch.float32)
         x = self.model.patch_embed(x)
         x = self.model.pos_drop(x)
         x = self.model.layers(x)
@@ -402,12 +403,22 @@ class DonutModel(PreTrainedModel):
             decoder_input_ids: (batch_size, sequence_length, embedding_dim)
             decode_labels: (batch_size, sequence_length)
         """
+        # return torch.tensor([1], requires_grad=True, dtype=torch.float16)
+        # return torch.tensor([1], requires_grad=True, dtype=torch.float16)
+        # with torch.autocast(device_type='cpu', dtype=torch.bfloat16):
         encoder_outputs = self.encoder(image_tensors)
         decoder_outputs = self.decoder(
             input_ids=decoder_input_ids,
             encoder_hidden_states=encoder_outputs,
             labels=decoder_labels,
         )
+        # else:    
+        #     encoder_outputs = self.encoder(image_tensors)
+        #     decoder_outputs = self.decoder(
+        #         input_ids=decoder_input_ids,
+        #         encoder_hidden_states=encoder_outputs,
+        #         labels=decoder_labels,
+        #     )
         return decoder_outputs
 
     def inference(
@@ -431,6 +442,7 @@ class DonutModel(PreTrainedModel):
             prompt_tensors: (1, sequence_length)
                 convert image to tensor if prompt_tensor is not fed
         """
+        # return torch.tensor([1], dtype=torch.float16)
         # prepare backbone inputs (image and prompt)
         if image is None and image_tensors is None:
             raise ValueError("Expected either image or image_tensors")

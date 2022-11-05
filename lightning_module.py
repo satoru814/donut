@@ -40,12 +40,15 @@ class DonutModelPLModule(pl.LightningModule):
                     input_size=self.config.input_size,
                     max_length=self.config.max_length,
                     align_long_axis=self.config.align_long_axis,
+                    name_or_path='./result'
                     # with DonutConfig, the architecture customization is available, e.g.,
                     # encoder_layer=[2,2,14,2], decoder_layer=4, ...
                 )
             )
 
     def training_step(self, batch, batch_idx):
+        if not self.config.gpu:
+            return torch.tensor([1.0], requires_grad=True)
         image_tensors, decoder_input_ids, decoder_labels = list(), list(), list()
         for batch_data in batch:
             image_tensors.append(batch_data[0])
@@ -59,6 +62,9 @@ class DonutModelPLModule(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx, dataset_idx=0):
+        if not self.config.gpu:
+            pass
+            # return torch.tensor([1.0], requires_grad=True)
         image_tensors, decoder_input_ids, prompt_end_idxs, answers = batch
         decoder_prompts = pad_sequence(
             [input_id[: end_idx + 1] for input_id, end_idx in zip(decoder_input_ids, prompt_end_idxs)],
@@ -87,6 +93,8 @@ class DonutModelPLModule(pl.LightningModule):
         return scores
 
     def validation_epoch_end(self, validation_step_outputs):
+        if not self.config.gpu:
+            return self.log_dict({"val_metric": .0}, sync_dist=True)
         num_of_loaders = len(self.config.dataset_name_or_paths)
         if num_of_loaders == 1:
             validation_step_outputs = [validation_step_outputs]
@@ -102,21 +110,25 @@ class DonutModelPLModule(pl.LightningModule):
             val_metric_name = f"val_metric_{i}th_dataset"
             self.log_dict({val_metric_name: val_metric[i]}, sync_dist=True)
         self.log_dict({"val_metric": np.sum(total_metric) / np.sum(cnt)}, sync_dist=True)
+        
 
     def configure_optimizers(self):
+        if self.config.gpu:
+            max_iter = None
 
-        max_iter = None
+            if int(self.config.get("max_epochs", -1)) > 0:
+                assert len(self.config.train_batch_sizes) == 1, "Set max_epochs only if the number of datasets is 1"
+                max_iter = (self.config.max_epochs * self.config.num_training_samples_per_epoch) / (
+                    self.config.train_batch_sizes[0] * torch.cuda.device_count() * self.config.get("num_nodes", 1)
+                )
 
-        if int(self.config.get("max_epochs", -1)) > 0:
-            assert len(self.config.train_batch_sizes) == 1, "Set max_epochs only if the number of datasets is 1"
-            max_iter = (self.config.max_epochs * self.config.num_training_samples_per_epoch) / (
-                self.config.train_batch_sizes[0] * torch.cuda.device_count() * self.config.get("num_nodes", 1)
-            )
+            if int(self.config.get("max_steps", -1)) > 0:
+                max_iter = min(self.config.max_steps, max_iter) if max_iter is not None else self.config.max_steps
 
-        if int(self.config.get("max_steps", -1)) > 0:
-            max_iter = min(self.config.max_steps, max_iter) if max_iter is not None else self.config.max_steps
-
-        assert max_iter is not None
+            assert max_iter is not None
+        else:
+            max_iter = 1000
+         
         optimizer = torch.optim.Adam(self.parameters(), lr=self.config.lr)
         scheduler = {
             "scheduler": self.cosine_scheduler(optimizer, max_iter, self.config.warmup_steps),
@@ -145,6 +157,7 @@ class DonutModelPLModule(pl.LightningModule):
 
     @rank_zero_only
     def on_save_checkpoint(self, checkpoint):
+        print('saved!!!')
         save_path = Path(self.config.result_path) / self.config.exp_name / self.config.exp_version
         self.model.save_pretrained(save_path)
         self.model.decoder.tokenizer.save_pretrained(save_path)
@@ -173,6 +186,7 @@ class DonutDataPLModule(pl.LightningDataModule):
                     worker_init_fn=self.seed_worker,
                     generator=self.g,
                     shuffle=True,
+                    collate_fn=self.collate_fn,
                 )
             )
         return loaders
@@ -188,6 +202,7 @@ class DonutDataPLModule(pl.LightningDataModule):
                     shuffle=False,
                 )
             )
+            
         return loaders
 
     @staticmethod
@@ -195,3 +210,8 @@ class DonutDataPLModule(pl.LightningDataModule):
         worker_seed = torch.initial_seed() % 2 ** 32
         np.random.seed(worker_seed)
         random.seed(worker_seed)
+        
+        
+    def collate_fn(self, batch):
+        batch = list(filter(lambda x: x is not None, batch))
+        return torch.utils.data.dataloader.default_collate(batch)

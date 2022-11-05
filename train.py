@@ -31,10 +31,17 @@ class CustomCheckpointIO(CheckpointIO):
         torch.save(checkpoint, path)
 
     def load_checkpoint(self, path, storage_options=None):
-        checkpoint = torch.load(path + "artifacts.ckpt")
-        state_dict = torch.load(path + "pytorch_model.bin")
-        checkpoint["state_dict"] = {"model." + key: value for key, value in state_dict.items()}
-        return checkpoint
+        print('+++aaa+++')
+        if torch.cuda.is_available():
+            checkpoint = torch.load(path + "artifacts.ckpt")
+            state_dict = torch.load(path + "pytorch_model.bin")
+            checkpoint["state_dict"] = {"model." + key: value for key, value in state_dict.items()}
+            return checkpoint
+        else:
+            checkpoint = torch.load(path + "artifacts.ckpt", map_location=torch.device('cpu'))
+            state_dict = torch.load(path + "pytorch_model.bin", map_location=torch.device('cpu'))
+            checkpoint["state_dict"] = {"model." + key: value for key, value in state_dict.items()}
+            return checkpoint
 
     def remove_checkpoint(self, path) -> None:
         return super().remove_checkpoint(path)
@@ -85,6 +92,7 @@ def train(config):
                     else f"<s_{task_name}>",
                     prompt_end_token="<s_answer>" if "docvqa" in dataset_name_or_path else f"<s_{task_name}>",
                     sort_json_key=config.sort_json_key,
+                    gpu = config.gpu #custom
                 )
             )
             # prompt_end_token is used for ignoring a given prompt in a loss function
@@ -106,30 +114,51 @@ def train(config):
         monitor="val_metric",
         dirpath=Path(config.result_path) / config.exp_name / config.exp_version,
         filename="artifacts",
-        save_top_k=1,
-        save_last=False,
+        # save_top_k=1,
+        save_last=True,
         mode="min",
+        every_n_epochs = 3
     )
 
     custom_ckpt = CustomCheckpointIO()
-    trainer = pl.Trainer(
-        resume_from_checkpoint=config.get("resume_from_checkpoint_path", None),
-        num_nodes=config.get("num_nodes", 1),
-        gpus=torch.cuda.device_count(),
-        strategy="ddp",
-        accelerator="gpu",
-        plugins=custom_ckpt,
-        max_epochs=config.max_epochs,
-        max_steps=config.max_steps,
-        val_check_interval=config.val_check_interval,
-        check_val_every_n_epoch=config.check_val_every_n_epoch,
-        gradient_clip_val=config.gradient_clip_val,
-        precision=16,
-        num_sanity_val_steps=0,
-        logger=logger,
-        callbacks=[lr_callback, checkpoint_callback],
-    )
-
+    if config.gpu:
+        print('========gpu training========')
+        trainer = pl.Trainer(
+            resume_from_checkpoint=config.get("resume_from_checkpoint_path", None),
+            num_nodes=config.get("num_nodes", 1),
+            gpus=torch.cuda.device_count(),
+            strategy="ddp",
+            accelerator="gpu",
+            plugins=custom_ckpt,
+            max_epochs=config.max_epochs,
+            max_steps=config.max_steps,
+            val_check_interval=config.val_check_interval,
+            check_val_every_n_epoch=config.check_val_every_n_epoch,
+            gradient_clip_val=config.gradient_clip_val,
+            precision=16,
+            num_sanity_val_steps=0,
+            logger=logger,
+            callbacks=[lr_callback, checkpoint_callback],
+        )
+    else : 
+        trainer = pl.Trainer(
+            resume_from_checkpoint=config.get("resume_from_checkpoint_path", None),
+            num_nodes=config.get("num_nodes", 1),
+            # gpus=torch.cuda.device_count(),
+            # strategy="ddp",
+            # accelerator="gpu",
+            plugins=custom_ckpt,
+            max_epochs=config.max_epochs,
+            max_steps=config.max_steps,
+            val_check_interval=config.val_check_interval,
+            check_val_every_n_epoch=config.check_val_every_n_epoch,
+            gradient_clip_val=config.gradient_clip_val,
+            precision=32,
+            num_sanity_val_steps=0,
+            logger=logger,
+            callbacks=[lr_callback, checkpoint_callback],
+            enable_checkpointing = True
+        )
     trainer.fit(model_module, data_module)
 
 
