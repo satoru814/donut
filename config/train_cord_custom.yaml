@@ -2,6 +2,7 @@ resume_from_checkpoint_path: null # only used for resume_from_checkpoint option 
 result_path: "./result"
 pretrained_model_name_or_path: "naver-clova-ix/donut-base" # loading a pre-trained model (from moldehub or path)
 dataset_name_or_paths: ["metadata.jsonl"] # loading datasets (from moldehub or path)
+target_items: ['pay_amount', 'pay_date']
 sort_json_key: False # cord dataset is preprocessed, and publicly available at https://huggingface.co/datasets/naver-clova-ix/cord-v2
 train_batch_sizes: [1]
 val_batch_sizes: [1]
@@ -13,7 +14,7 @@ seed: 2022
 lr: 3e-5
 warmup_steps: 300 # 800/8*30/10, 10%
 num_training_samples_per_epoch: 800
-max_epochs: 10
+max_epochs: 20
 max_steps: -1
 num_workers: 0
 val_check_interval: 1.0

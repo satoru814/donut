@@ -33,14 +33,22 @@ sol -vvv run  -d --root . --cmd 'python sol.py  --train' --num-gpu
 ```
 config/train_cord_custom.yamlが学習の設定ファイルとして読み込まれる。
 
-##TODO
+## Testing
+```
+python test.py --pretrained_model_name_or_path ./checkpoints --dataset_name_or_path metadata.jsonl --config config/train_cord_custom_cpu.yaml --save_path result/test.json
+```
+
+## TODO
 - [ ] ./config/train_cord_custom.yaml内のnum_workerによるエラー
 num_worker > 1 でシェアメモリーが足りないエラーが出る。
 - [ ] batch_sizeが少なすぎる**
 batch_size >= 2　でOOM しょうがないのか？？
-- [ ] validation_step, test_stepの実装
+- [x] validation_step, test_stepの実装
 - [ ] MLFlowなどのログツールの実装
-- [ ] exp_version関連の管理
+- [x] exp_version関連の管理
+- [x] validation_setの結果保存
 - [ ] 学習項目の追加
-- [ ] validation_stepに関してサイズを決めるなどの拡張性を持たせる。 
+- [x] validation_stepに関してサイズを決めるなどの拡張性を持たせる。 
 ref:utils.py line37
+- [] target_itemsをトレーニング前にチェックする機能
+- [] メンバーが使えるようにする。

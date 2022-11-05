@@ -28,22 +28,22 @@ def save_json(write_path: Union[str, bytes, os.PathLike], save_obj: Any):
 
 #Update for local jsonl
 def load_json(json_path: Union[str, bytes, os.PathLike], split: str):
-    # np.random.seed(seed=seed)
     dataset = []
     with open(json_path, 'r') as f:
         for line in f:
             json_sample = json.loads(line)
-            dataset.append(json_sample)
-    random.shuffle(dataset)
-    train_dataset, valid_dataset = dataset[:int(len(dataset)*0.8)], dataset[int(len(dataset)*0.8):] #拡張可能にする
-    if split == 'train':
-        return train_dataset
-    elif split == 'validation':
-        return valid_dataset
-    # return train_dataset, valid_dataset
+            # print(json_sample['ground_truth']['gt_parse'])
+            if json.loads(json_sample['ground_truth'])['meta']['split'] == split:
+                dataset.append(json_sample)
+    return dataset
+    # train_dataset, valid_dataset = dataset[:int(len(dataset)*0.8)], dataset[int(len(dataset)*0.8):] #拡張可能にする
+    # if split == 'train':
+    #     return train_dataset
+    # elif split == 'validation':
+    #     return valid_dataset
     
 #load
-def load_image(image_path: str, mime_type: str):
+def load_image(image_path: str):
     return Image.open(image_path)
 
 class DonutDataset(Dataset):
@@ -129,9 +129,9 @@ class DonutDataset(Dataset):
         meta = json.loads(sample["ground_truth"])['meta']
         #custom: read PIL image from path string
         if self.gpu:
-            image = load_image(sample['file_name'], meta['mime_type']) 
+            image = load_image(sample['file_name']) 
         else :
-            image = load_image(os.path.join('./dataset/images/', Path(sample['file_name']).name), meta['mime_type']) #load from test data from ./datset/images
+            image = load_image(os.path.join('./dataset/images/', Path(sample['file_name']).name)) #load from test data from ./datset/images
             
         #custom corrupted data
         if image == None:

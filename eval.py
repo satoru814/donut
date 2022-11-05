@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import random
 import torch
 from datasets import load_dataset
@@ -35,8 +36,8 @@ def test(args, config):
 
     pretrained_model.eval()
 
-    if args.save_path:
-        os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
+    # if args.save_path:
+    #     os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
 
     predictions = []
     ground_truths = []
@@ -47,8 +48,6 @@ def test(args, config):
     # dataset = load_dataset(args.dataset_name_or_path, split=args.split)
     dataset = load_json(args.dataset_name_or_path, split=args.split)
     for idx, sample in tqdm(enumerate(dataset), total=len(dataset)):
-        if idx == 2:
-            break
         ground_truth = json.loads(sample["ground_truth"])
         if config.gpu:
             image = load_image(sample['file_name']) 
@@ -93,10 +92,10 @@ def test(args, config):
     )
 
     # if args.save_path:
-    #     scores["predictions"] = predictions
-    #     scores["ground_truths"] = ground_truths
-    #     scores["filenames"] = filenames
-    #     save_json(args.save_path, scores)
+    scores["predictions"] = predictions
+    scores["ground_truths"] = ground_truths
+    scores["filenames"] = filenames
+        # save_json(args.save_path, scores)
     return scores
 
 def convert_to_df(scores, config):
@@ -106,7 +105,8 @@ def convert_to_df(scores, config):
     predictions_json = {ky:[] for ky in config.target_items}
     for pred in predictions:
         try:
-            pred_json = json.loads(pred)['invoice']
+            # pred_json = json.loads(pred)['invoice']
+            pred_json = pred['invoice']
             for item_ky in config.target_items:
                 try:
                     item_val = pred_json[item_ky]
@@ -124,11 +124,11 @@ def convert_to_df(scores, config):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--pretrained_model_name_or_path", type=str, default='donut-base-finetuned-docvqa')
-    parser.add_argument("--dataset_name_or_path", type=str)
+    parser.add_argument("--config", type=str, default='config/train_cord_custom.yaml')
+    
+    parser.add_argument("--dataset_name_or_path", type=str, default='metadata.jsonl')
     parser.add_argument("--split", type=str, default="validation")
     parser.add_argument("--task_name", type=str, default=None)
-    parser.add_argument("--save_path", type=str, default=None)
-    parser.add_argument("--config", type=str, default=None)
     args, left_argv = parser.parse_known_args()
     config = Config(args.config)
     random.seed(config.seed)
@@ -138,4 +138,6 @@ if __name__ == "__main__":
     
     scores = test(args, config)
     df_pred = convert_to_df(scores, config)
-    return df_pred
+    df_pred.to_csv('result/validations.csv', index=False)
+    # Path('./result/validations.csv').copy(os.path.join(args.save_path_s3, 'validations.csv'))
+    # return df_pred

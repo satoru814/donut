@@ -7,6 +7,7 @@ receipt s3url = s3://cfo-upload-tokyo-production/receipt//{cid}/{s3_file_name}
 import os
 import argparse
 import subprocess
+import numpy as np
 import json
 from pathlibfs import Path
 from pdf2image import convert_from_path
@@ -25,6 +26,7 @@ def args_parser():
     parser.add_argument('--save-dir-s3', type=str, default='s3://ai-lab-production/chen/donut/dataset/20221010-test/')
     
     parser.add_argument('--save-images-dir-local', type=str, default='./dataset/images')
+    parser.add_argument('--seed', type=str, default=1)
     args = parser.parse_args()
     return args
 
@@ -40,13 +42,13 @@ def convert_copy_file(imglist, path_dest_local, path_dest_s3):
     Path(os.path.join(path_dest_local, destname+'.png')).copy(os.path.join(path_dest_s3, destname+'.png'))
     
 def main(args):
+    np.random.seed(args.seed)
     #copy tables to donut dir
     print('copy tables')
     tables = wr.s3.list_objects(args.path_invoice_tables_s3)
-    # for table in tables:
-    #     Path(table).copy(os.path.join(args.save_table_dir_s3, Path(table).name))
 
-    def prepare_sample(row):
+    def prepare_sample(sample, train_split=0.8):
+        row, train_prob = sample
         idx, sample = row
         #prepare jsonl
         dicti = {}
@@ -56,8 +58,10 @@ def main(args):
         mime_type = sample['mime_typ'] #TODO fix columns name miss #TODO fix mime_type == <NAN> case
         pay_amount_gt = sample['pay_amount']
         pay_date_gt = sample['pay_date']
+        
         ground_trues_parse = {"invoice" : {"pay_amount":f"{pay_amount_gt}", "pay_date":f"{pay_date_gt}"}}
-        gt_sentence = json.dumps({"gt_parse": ground_trues_parse, 'meta':{'mime_type':mime_type}})
+        split = ['train', 'validation'][1-int(train_prob < train_split)]
+        gt_sentence = json.dumps({"gt_parse": ground_trues_parse, 'meta':{'mime_type':mime_type, 'split':split}})
         dicti["file_name"] = os.path.join('./dataset', f'{str(receipt_id_sp)}.png')
         dicti['ground_truth'] = gt_sentence
         
@@ -88,14 +92,13 @@ def main(args):
             unique_idx.append(idx)
             unique_receipt_id[receipt_id] = 1
     df_unique = df.iloc[unique_idx]
+    train_probs = np.random.rand(len(df_unique))
     jsonl_list = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor :
-        for idx, dicti  in enumerate(executor.map(prepare_sample, df_unique.iterrows())) :
+        for idx, dicti  in enumerate(executor.map(prepare_sample, zip(df_unique.iterrows(), train_probs))) :
             if idx > 1000 :
                 break
-            if dicti == None:
-                pass
-            else:
+            if dicti != None:
                 jsonl_list.append(dicti)
                 
         with open('./metadata.jsonl', 'w') as f:
