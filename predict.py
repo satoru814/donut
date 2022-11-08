@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import random
 import torch
 from datasets import load_dataset
@@ -24,19 +25,16 @@ from donut import DonutModel, JSONParseEvaluator, load_json, save_json
 def load_image(image_path: str):
     return Image.open(image_path)
     
-def test(args, config):
-    pretrained_model = DonutModel.from_pretrained(args.pretrained_model_name_or_path)
+def predict(args, config):
+    pretrained_model = DonutModel.from_pretrained(args.pretrained_model_name)
 
     if config.gpu:
-        pretrained_model.half()
+        pretrained_model.to(torch.float32)
         pretrained_model.to("cuda")
     else:
         pretrained_model.encoder.to(torch.float32)
 
     pretrained_model.eval()
-
-    if args.save_path:
-        os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
 
     predictions = []
     ground_truths = []
@@ -47,8 +45,9 @@ def test(args, config):
     # dataset = load_dataset(args.dataset_name_or_path, split=args.split)
     dataset = load_json(args.dataset_name_or_path, split=args.split)
     for idx, sample in tqdm(enumerate(dataset), total=len(dataset)):
-        if idx == 2:
-            break
+        if not config.gpu:
+            if idx == 2:
+                break
         ground_truth = json.loads(sample["ground_truth"])
         if config.gpu:
             image = load_image(sample['file_name']) 
@@ -73,7 +72,7 @@ def test(args, config):
             answers = set([qa_parse["answer"] for qa_parse in gt])
             score = float(output["answer"] in answers)
         else:
-            filename = sample['file_name']
+            filename = int(Path(sample['file_name']).name.split('.')[0])
             gt = ground_truth["gt_parse"]
             score = evaluator.cal_acc(output, gt)
 
@@ -91,51 +90,61 @@ def test(args, config):
     print(
         f"Total number of samples: {len(accs)}, Tree Edit Distance (TED) based accuracy score: {scores['ted_accuracy']}, F1 accuracy score: {scores['f1_accuracy']}"
     )
-
-    # if args.save_path:
-    #     scores["predictions"] = predictions
-    #     scores["ground_truths"] = ground_truths
-    #     scores["filenames"] = filenames
-    #     save_json(args.save_path, scores)
+    
+    scores["predictions"] = predictions
+    scores["ground_truths"] = ground_truths
+    scores["filenames"] = filenames
     return scores
 
 def convert_to_df(scores, config):
     predictions = scores['predictions']
     filenames = scores['filenames']
+    ground_truths = scores["ground_truths"]
     
-    predictions_json = {ky:[] for ky in config.target_items}
-    for pred in predictions:
+    predictions_json = {}
+    for item_ky in config.target_items:
+        predictions_json[f'{item_ky}_gt'] = []
+        predictions_json[f'{item_ky}_pred'] = []
+        
+    predictions_json['receipt_id_sp'] = []
+    for idx, (pred, gt) in enumerate(zip(predictions, ground_truths)):
+        filename = filenames[idx]
+        gt_json = gt['invoice']
+        for item_ky in config.target_items:
+            predictions_json[f'{item_ky}_gt'].append(gt_json[item_ky])
+            
+        predictions_json['receipt_id_sp'].append(filename)
         try:
-            pred_json = json.loads(pred)['invoice']
+            # pred_json = json.loads(pred)['invoice']
+            pred_json = pred['invoice']
             for item_ky in config.target_items:
                 try:
                     item_val = pred_json[item_ky]
                 except KeyError:
                     item_val = 'no item'
-                predictions_json[item_ky].append(item_val)
+                predictions_json[f'{item_ky}_pred'].append(item_val)
                 
         #prediction is not json format
-        except json.JSONDecodeError:
-            for ky in predictions_json.keys():
-                predictions_json[ky].append(None)
+        except (json.JSONDecodeError, KeyError):
+            for item_ky in config.target_items:
+                predictions_json[f'{item_ky}_pred'].append(None)
+                
     df_pred = pd.DataFrame(predictions_json)
     return df_pred
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pretrained_model_name_or_path", type=str, default='donut-base-finetuned-docvqa')
-    parser.add_argument("--dataset_name_or_path", type=str)
-    parser.add_argument("--split", type=str, default="validation")
-    parser.add_argument("--task_name", type=str, default=None)
-    parser.add_argument("--save_path", type=str, default=None)
-    parser.add_argument("--config", type=str, default=None)
+    parser.add_argument("--pretrained-model-name", type=str, default='donut-base-finetuned-docvqa')
+    parser.add_argument("--config", type=str, default='config/train_cord_custom.yaml')
+    parser.add_argument("--split", type=str, default='validation')
     args, left_argv = parser.parse_known_args()
+    args.task_name = None
+    args.dataset_name_or_path = 'metadata.jsonl'
     config = Config(args.config)
-    random.seed(config.seed)
-
     if args.task_name is None:
         args.task_name = os.path.basename(args.dataset_name_or_path)
     
-    scores = test(args, config)
+    random.seed(config.seed)
+    scores = predict(args, config)
     df_pred = convert_to_df(scores, config)
-    return df_pred
+    df_pred.to_csv(f'result/{args.split}.csv', index=False)

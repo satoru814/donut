@@ -32,15 +32,9 @@ def load_json(json_path: Union[str, bytes, os.PathLike], split: str):
     with open(json_path, 'r') as f:
         for line in f:
             json_sample = json.loads(line)
-            # print(json_sample['ground_truth']['gt_parse'])
             if json.loads(json_sample['ground_truth'])['meta']['split'] == split:
                 dataset.append(json_sample)
     return dataset
-    # train_dataset, valid_dataset = dataset[:int(len(dataset)*0.8)], dataset[int(len(dataset)*0.8):] #拡張可能にする
-    # if split == 'train':
-    #     return train_dataset
-    # elif split == 'validation':
-    #     return valid_dataset
     
 #load
 def load_image(image_path: str):

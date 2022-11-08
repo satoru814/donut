@@ -1,5 +1,5 @@
-"""
 Usage:
+"""
     sol -vvv run  -d --root . --cmd 'python3.8 sol.py --train' --num-gpu 1
 """
 
@@ -15,6 +15,7 @@ from functools import partial
 def args_parser():
     parser = argparse.ArgumentParser(description="donut")
     parser.add_argument('--train', action='store_true', default=False)
+    parser.add_argument('--predict', type=str, default=None)
     parser.add_argument('--exp', type=str, default='test')
     parser.add_argument('--checkpoints', type=str, default='20221010-test')
     parser.add_argument('--dataset', type=str, default='20221010_main')
@@ -35,10 +36,6 @@ def download_dir_from_s3(path_s3, path_local):
             if idx%1000 == 0:
                 print(idx)
     print(f'download{path_s3}_done!')
-
-
-def upload_file_to_s3s(checkpoint_path_local, checkpoint_path_s3):
-    wr.s3.upload(checkpoint_path_local, checkpoint_path_s3)
 
 
 def main(args):
@@ -63,22 +60,32 @@ def main(args):
     #metadata.jsonlをローカルに保存
     download_dir_from_s3(path_s3_jsonl, '')
     
-    
-    #Training
+    #pip
     os.system('pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113')
     os.system('pip3 install pytorch-lightning')
     os.system('pip3 install sconf')
+    
+    #Training
     if args.train:
         subprocess.run(['python', 'train.py', '--config', './config/train_cord_custom.yaml', '--exp_version', 'main'])
-        subprocess.run(['python', 'eval.py', '--config', './config/train_cord_custom.yaml' '--pretrained_model_name_or_path', './result/train_cord_cumstom/main',\
-            '--dataset_name_or_path', 'metadata.jsonl', '--save-path-s3', path_s3_result
+        subprocess.run(['python', 'predict.py', '--config', './config/train_cord_custom.yaml' '--pretrained-model-name', './result/train_cord_cumstom/main'\
+            ,'--split', 'validation'
             ])
-    #Save checkpoint
-    for filepath in Path(f'./result/train_cord_custom/main').iterdir():
-        print(filepath)
-        filepath.copy(os.path.join(path_s3_result, filepath.name))
-    #Save validations result
-    Path('./result/validations.csv').copy(os.path.join(path_s3_result, 'validations.csv'))
+        for filepath in Path(f'./result/train_cord_custom/main').iterdir():
+            print(filepath)
+            filepath.copy(os.path.join(path_s3_result, filepath.name))
+            
+        #Save validations result and checkpoints
+        Path('./result/validation.csv').copy(os.path.join(path_s3_result, 'validation.csv'))
+            
+    #Validation  
+    if args.predict:
+        assert args.predict in ['train', 'validation', 'test']
+        subprocess.run(['python', 'predict.py', '--config', './config/train_cord_custom.yaml', '--pretrained-model-name', './checkpoints'\
+            , '--split', args.predict
+            ])
+        #Save validations result and checkpoints
+        Path(f'./result/{args.predict}.csv').copy(os.path.join(path_s3_result, f'{args.predict}.csv'))
         
 if __name__ == '__main__':
     args = args_parser()

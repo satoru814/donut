@@ -32,23 +32,28 @@ gpuでの学習はこれ
 sol -vvv run  -d --root . --cmd 'python sol.py  --train' --num-gpu 
 ```
 config/train_cord_custom.yamlが学習の設定ファイルとして読み込まれる。
-
+実験ログの確認
+```
+tensorboard --logdir {path_to_event-file}
+```
 ## Testing
 ```
-python test.py --pretrained_model_name_or_path ./checkpoints --dataset_name_or_path metadata.jsonl --config config/train_cord_custom_cpu.yaml --save_path result/test.json
+sol -vvv run  -d --root . --cmd 'python sol.py --checkpoints ./checkpoints --dataset 20221018 --exp epoch20_20201010' --num-gpu 2
 ```
 
 ## TODO
 - [ ] ./config/train_cord_custom.yaml内のnum_workerによるエラー
 num_worker > 1 でシェアメモリーが足りないエラーが出る。
 - [ ] batch_sizeが少なすぎる**
+--> OOMなどについて聞くのが早いか？
 batch_size >= 2　でOOM しょうがないのか？？
 - [x] validation_step, test_stepの実装
-- [ ] MLFlowなどのログツールの実装
+- [ ] MLFlowなどのログツールの実装  
+  - [x] --> tensorboardで実装した
 - [x] exp_version関連の管理
 - [x] validation_setの結果保存
-- [ ] 学習項目の追加
-- [x] validation_stepに関してサイズを決めるなどの拡張性を持たせる。 
-ref:utils.py line37
-- [] target_itemsをトレーニング前にチェックする機能
-- [] メンバーが使えるようにする。
+- [ ] 学習項目の追加　優先度高い
+- [x] validation_stepに関してサイズを決めるなどの拡張性を持たせる。 --> ref:utils.py line37
+- [ ] メンバーが使えるようにする。　優先度高い
+- [ ] sweeep結果もmetadata.jsonlのメタデータに入れて単体でもsweeepとの評価が行いやすいようにする。 --> 形式などを考えると難しそう
+- [ ] predictionの形式をととえる。 --> 本当に必要か？
